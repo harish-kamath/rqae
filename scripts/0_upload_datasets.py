@@ -1,3 +1,10 @@
+"""
+I just got the monology pile dataset from Neuronpedia directly.
+Generally, you can adapt this script to upload any set of tokens (by just running the LLM tokenizer on your dataset).
+One caveat throughout this project is that you can only use a constant sequence length (in this case, 128), as we ignore masks.
+By the end of this, you need a tokens.pt (B, S) and a text.json (list of lists, also B x S) in the same directory.
+"""
+
 import torch
 import os
 from transformers import AutoTokenizer

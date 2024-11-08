@@ -6,6 +6,7 @@ from huggingface_hub import HfApi, hf_hub_download
 
 
 class JumpReLUSAE(nn.Module):
+
     def __init__(self, d_model, d_sae, name=""):
         # Note that we initialise these to zeros because we're loading in pre-trained weights.
         # If you want to train your own SAEs then we recommend using blah
@@ -50,6 +51,12 @@ class JumpReLUSAE(nn.Module):
 
         return hook_fn
 
+    def crop(self, max_features: int):
+        self.W_enc.data = self.W_enc.data[:, :max_features]
+        self.b_enc.data = self.b_enc.data[:max_features]
+        self.W_dec.data = self.W_dec.data[:max_features, :]
+        self.threshold.data = self.threshold.data[:max_features]
+
     @classmethod
     def from_pretrained(
         cls,
@@ -60,6 +67,28 @@ class JumpReLUSAE(nn.Module):
         l0: int = 82,
         find_closest_l0: bool = False,
     ):
+        if "gemmascope-gemma" in model:
+            # Shortcut to define parameters
+            gs, gem, two, llm_size, layer_type, layer, width, l0 = model.split("-")
+
+            # Check all constants are correct
+            assert all(
+                [
+                    gs == "gemmascope",
+                    gem == "gemma",
+                    two == "2",
+                    layer_type in ["res", "mlp", "att"],
+                    width.startswith("w"),
+                    width.endswith("k"),
+                    l0.startswith("l"),
+                ]
+            ), f"Invalid model name: {model}"
+
+            model = f"google/gemma-2-{llm_size}"
+            layer = int(layer)
+            width = int(width.replace("w", "").replace("k", ""))
+            l0 = int(l0.replace("l", ""))
+
         # Hard-coded
         repos = {
             "google/gemma-2-2b": {

@@ -2,3 +2,7 @@
 *.json
 __pycache__/
 .DS_Store
+*.npz
+*.npy
+*.jpg
+*.png

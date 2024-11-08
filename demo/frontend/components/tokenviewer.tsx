@@ -8,9 +8,10 @@ interface InteractiveTextDisplayProps {
     highlightToken?: number;
     activations?: number[];
     shorthand?: boolean;
+    activation_percentile?: number;
 }
 
-const TokenViewer: React.FC<InteractiveTextDisplayProps> = ({ texts, actions, highlightToken, activations, shorthand = false }) => {
+const TokenViewer: React.FC<InteractiveTextDisplayProps> = ({ texts, actions, highlightToken, activations, shorthand = false, activation_percentile = 0.9 }) => {
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
     const [isExpanded, setIsExpanded] = useState(false);
     const [shorthandIndexShift, setShorthandIndexShift] = useState(0);
@@ -24,16 +25,27 @@ const TokenViewer: React.FC<InteractiveTextDisplayProps> = ({ texts, actions, hi
             : activations.map(a => 0.4 + 0.6 * ((a - min) / (max - min)));
     }, [activations]);
 
+    const activationThreshold = useMemo(() => {
+        if (!activations || activations.length === 0) return 0;
+        const sortedActivations = [...activations].sort((a, b) => a - b);
+        const thresholdIndex = Math.floor(sortedActivations.length * (activation_percentile / 100));
+        return sortedActivations[thresholdIndex];
+    }, [activations, activation_percentile]);
+
     const displayTokens = useMemo(() => {
         const NUM_TOKENS = 24;
         if (!shorthand || isExpanded) {
             setShorthandIndexShift(0);
-            return texts.map((text, index) => ({ text, activation: normalizedActivations ? normalizedActivations[index] : 1 }));
+            return texts.map((text, index) => ({
+                text,
+                activation: normalizedActivations ? normalizedActivations[index] : 1,
+                isHighlighted: activations ? activations[index] >= activationThreshold : false
+            }));
         }
 
         if (!activations) {
             setShorthandIndexShift(0);
-            return [{ text: '...', activation: 1 }, ...texts.slice(0, NUM_TOKENS).map((text, index) => ({ text, activation: 1 }))];
+            return [{ text: '...', activation: 1, isHighlighted: false }, ...texts.slice(0, NUM_TOKENS).map((text, index) => ({ text, activation: 1, isHighlighted: false }))];
         }
 
         const maxIndex = activations.indexOf(Math.max(...activations));
@@ -41,15 +53,16 @@ const TokenViewer: React.FC<InteractiveTextDisplayProps> = ({ texts, actions, hi
         const end = Math.min(texts.length, start + NUM_TOKENS);
         setShorthandIndexShift(start);
         return [
-            ...(start > 0 ? [{ text: '...', activation: 1 }] : []),
+            ...(start > 0 ? [{ text: '...', activation: 1, isHighlighted: false }] : []),
             ...texts.slice(start, end).map((text, index) => ({
                 text,
-                activation: normalizedActivations ? normalizedActivations[start + index] : 1
+                activation: normalizedActivations ? normalizedActivations[start + index] : 1,
+                isHighlighted: activations[start + index] >= activationThreshold
             }))
         ];
-    }, [texts, activations, normalizedActivations, shorthand, isExpanded]);
+    }, [texts, activations, normalizedActivations, shorthand, isExpanded, activationThreshold]);
 
-    function full_display(text: string, activation: number) {
+    function full_display(text: string, activation: number, isHighlighted: boolean) {
         if (text.trim() === '' && text.includes('\n')) {
             if ((!shorthand || isExpanded) && activation == 0.4) {
                 return text.split('\n').map((_, index, array) =>
@@ -59,7 +72,7 @@ const TokenViewer: React.FC<InteractiveTextDisplayProps> = ({ texts, actions, hi
                 return <b>{'\\n'.repeat(text.split('\n').length - 1)}</b>;
             }
         }
-        if (activation > 0.4) {
+        if (isHighlighted) {
             return <b>{text}</b>;
         }
         return text;
@@ -72,7 +85,7 @@ const TokenViewer: React.FC<InteractiveTextDisplayProps> = ({ texts, actions, hi
     return (
         <div className="p-4">
             <div className="inline">
-                {displayTokens.map(({ text, activation }, index) => {
+                {displayTokens.map(({ text, activation, isHighlighted }, index) => {
                     return (
                         <span
                             key={index}
@@ -85,14 +98,14 @@ const TokenViewer: React.FC<InteractiveTextDisplayProps> = ({ texts, actions, hi
                                 }`}
                             style={{
                                 opacity: activation,
-                                color: activation > 0.4 ? 'maroon' : 'inherit'
+                                color: isHighlighted ? 'maroon' : 'inherit'
                             }}
                             onMouseEnter={() => setHoveredIndex(index)}
                             onMouseLeave={() => setHoveredIndex(null)}
                             onClick={actions && actions[index] ? actions[index] : undefined}
                         >
-                            {full_display(text, activation)}
-                            {(!shorthand || isExpanded) && hoveredIndex === index && activations && activations[index] && activations[index] > 0.1 && (
+                            {full_display(text, activation, isHighlighted)}
+                            {(!shorthand || isExpanded) && hoveredIndex === index && activations && activations[index] && (
                                 <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-2 py-1 rounded text-sm mb-1">
                                     {activations[index].toFixed(4)}
                                 </div>
@@ -110,7 +123,7 @@ const TokenViewer: React.FC<InteractiveTextDisplayProps> = ({ texts, actions, hi
                     >
                         {isExpanded ? 'Contract' : '...Expand'}
                     </button>
-                    &nbsp;(Max Value: {Math.max(...activations).toFixed(4)})
+                    &nbsp;(Max Value: {activations && Math.max(...activations).toFixed(4)})
                 </>
             )}
         </div>

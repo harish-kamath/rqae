@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from itertools import product
 from huggingface_hub import hf_hub_download
@@ -9,7 +10,10 @@ from safetensors import safe_open
 
 
 class RQAE(nn.Module):
-    PRETRAINED = {"google/gemma-2-2b": "harish-kamath/rqae/gemma-2-2b"}
+    PRETRAINED = {
+        "google/gemma-2-2b": "harish-kamath/rqae/gemma-2-2b",
+        "rqae-rqae-round_fsq-cbd4-cbs5-nq1024": "harish-kamath/rqae/gemma-2-2b",
+    }
 
     def __init__(
         self,
@@ -61,9 +65,10 @@ class RQAE(nn.Module):
             codebook = list(product(codebook, repeat=self.codebook_dim))
             codebook = np.array(codebook)
             if self.quantization_method == "round_fsq":
-                codebook = codebook / np.linalg.norm(
-                    (codebook + 1e-10), axis=-1, keepdims=True
-                )
+                norms = np.linalg.norm(codebook, axis=-1, keepdims=True)
+                # Avoid division by zero for all-zero vectors
+                norms = np.where(norms == 0, 1.0, norms)
+                codebook = np.divide(codebook, norms, where=norms != 0)
             self.codebook.data.copy_(torch.from_numpy(codebook))
             self.codebook.requires_grad = False
 
@@ -96,6 +101,7 @@ class RQAE(nn.Module):
     def update_codebook_counts(self, indices):
         if not self.training:
             return
+        return  # Use if you want, only used to monitor training (EMA for codebook usage)
 
         # indices is (B, S, num_quantizers). Flatten to (B * S, num_quantizers)
         flat_indices = indices.view(-1, indices.size(-1))
@@ -123,6 +129,31 @@ class RQAE(nn.Module):
         self.codebook.data.copy_(
             self.codebook.data / self.codebook.data.norm(dim=-1, keepdim=True)
         )
+
+    @property
+    def codebook_sims(self):
+        # only works for round_fsq for now
+        if hasattr(self, "_codebook_sims"):
+            return self._codebook_sims
+        if not self.quantization_method == "round_fsq":
+            raise ValueError("Codebook sims only supported for round_fsq for now")
+        codebook = self.codebook.data.detach().clone()[0]
+        codebook_sims = F.normalize(codebook, dim=-1) @ F.normalize(codebook, dim=-1).T
+        self._codebook_sims = codebook_sims.to(torch.float16)
+        return self._codebook_sims
+
+    @property
+    def subfeatures(self):
+        if hasattr(self, "_subfeatures"):
+            return self._subfeatures
+        self._subfeatures = []
+        for layer_idx in range(self.num_quantizers):
+            layer_codebook = self.codebook[layer_idx]
+            lin_out = self.layers[layer_idx][1]
+            subfeature = lin_out(layer_codebook)
+            self._subfeatures.append(subfeature)
+        self._subfeatures = torch.stack(self._subfeatures)
+        return self._subfeatures  # (num_quantizers, codebook_size, dim)
 
     def gumbel_sample(self, cos_sim, temperature=0.0):
         if temperature < 1e-7 or not self.training:
