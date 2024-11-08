@@ -12,7 +12,7 @@ export default function Home() {
     const newSequences: { id: number; tokens: string[] }[] = [];
     console.log("Fetching sequences", count);
     for (let i = 0; i < count; i++) {
-      const response = await fetch('https://harish-kamath--rqae-server-sequence-dev.modal.run/');
+      const response = await fetch('https://harish-kamath--rqae-server-sequence.modal.run');
       const data = await response.json();
       newSequences.push({ id: data[0], tokens: data[1] });
       setSequences(prev => [...prev, { id: data[0], tokens: data[1] }]);

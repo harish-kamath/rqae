@@ -37,7 +37,7 @@ const FeaturePage: FC<FeaturePageProps> = ({ params }) => {
                 return;
             }
             try {
-                const response = await fetch(`https://harish-kamath--rqae-server-feature-web-dev.modal.run?model_id=${modelid}&id=${id}`);
+                const response = await fetch(`https://harish-kamath--rqae-server-feature-web.modal.run?model_id=${modelid}&id=${id}`);
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
