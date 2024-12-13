@@ -1,5 +1,5 @@
 *.pt
-*.json
+**/text.json
 __pycache__/
 .DS_Store
 *.npz
