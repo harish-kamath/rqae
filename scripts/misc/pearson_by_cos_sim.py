@@ -161,7 +161,7 @@ def main():
 
 
 if __name__ == "__main__":
-    from scripts.plotting_utils import *
+    from scripts.misc.plotting_utils import *
     import torch
 
     pearson_corrs = torch.load("pearson_corrs.pt")

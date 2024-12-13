@@ -155,6 +155,28 @@ class RQAE(nn.Module):
         self._subfeatures = torch.stack(self._subfeatures)
         return self._subfeatures  # (num_quantizers, codebook_size, dim)
 
+    @property
+    def subfeature_sims(self):
+        if hasattr(self, "_subfeature_sims"):
+            return self._subfeature_sims
+        normalized_subfeatures = F.normalize(self.subfeatures, dim=-1)
+        # (num_quantizers, codebook_size, codebook_size)
+        self._subfeature_sims = (
+            normalized_subfeatures @ normalized_subfeatures.transpose(-1, -2)
+        )
+        self._subfeature_sims = self._subfeature_sims.to(torch.float16)
+        return self._subfeature_sims
+
+    @property
+    def layer_norms(self):
+        if hasattr(self, "_layer_norms"):
+            return self._layer_norms
+        self._layer_norms = torch.tensor(
+            [l[1].weight.data.norm(dim=0).mean().item() for l in self.layers],
+            device=self.layers[0][1].weight.device,
+        )
+        return self._layer_norms
+
     def gumbel_sample(self, cos_sim, temperature=0.0):
         if temperature < 1e-7 or not self.training:
             return cos_sim.argmax(dim=-1)

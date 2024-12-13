@@ -314,7 +314,7 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import os
     from tqdm import tqdm
-    from scripts.plotting_utils import *
+    from scripts.misc.plotting_utils import *
 
     correlations1 = []
     correlations2 = []

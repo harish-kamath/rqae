@@ -223,7 +223,7 @@ def main():
 
 
 if __name__ == "__main__":
-    from scripts.plotting_utils import *
+    from scripts.misc.plotting_utils import *
 
     results = np.load("results.npy")
 
