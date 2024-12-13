@@ -11,18 +11,18 @@ interface CacheCheckResult {
 interface TokenSamples {
     top: {
         indices: number[];
-        intensities: number[];
-        texts: string[][];
+        intensities: number[][];
+        texts: string[][][];
     };
     middle: {
         indices: number[];
-        intensities: number[];
-        texts: string[][];
+        intensities: number[][];
+        texts: string[][][];
     };
     bottom: {
         indices: number[];
-        intensities: number[];
-        texts: string[][];
+        intensities: number[][];
+        texts: string[][][];
     };
 }
 
@@ -65,7 +65,7 @@ const SampleCategory = ({
     title: string;
     samples: number[];
     intensities: number[][];
-    texts: string[][]
+    texts: string[][][]
 }) => {
     return (
         <div className="space-y-2">
@@ -81,7 +81,7 @@ const SampleCategory = ({
                         <div key={sample} className="p-3 bg-gray-50 rounded">
                             <div className="text-xs text-gray-500 mb-1">Sample {sampleIdx + 1} (ID: {sample})</div>
                             <div className="font-mono text-sm flex flex-wrap">
-                                {sampleTokens.map((token, tokenIdx) => {
+                                {sampleTokens.map((token: string, tokenIdx: number) => {
                                     const normalizedIntensity = normalizedIntensities[tokenIdx];
                                     return (
                                         <span
