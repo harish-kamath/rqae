@@ -157,7 +157,7 @@ class IntensityEngine:
         top_examples: int = 30,
         middle_examples: int = 10,
         bottom_examples: int = 10,
-        layers: List[int] = [4, 6, 8, 12, 16, 24, 32, 48, 64, 128],
+        layers: List[int] = [4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256, 512, 1023],
     ):
         from tqdm import tqdm
 

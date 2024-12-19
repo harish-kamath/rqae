@@ -37,10 +37,8 @@ interface TokenDetails {
 
 // Helper function to normalize intensities for a sequence
 const normalizeIntensities = (intensities: number[]) => {
-    const min = Math.min(...intensities);
     const max = Math.max(...intensities);
-    const range = max - min;
-    return intensities.map(i => range > 0 ? (i - min) / range : 0);
+    return intensities.map(i => max > 0 ? Math.max(0, i) / max : 0);
 };
 
 // Helper function to convert intensity to color
@@ -53,7 +51,7 @@ const getIntensityColor = (intensity: number, shouldShow: boolean) => {
 // Helper function to determine if intensity should be shown
 const shouldShowIntensity = (normalizedIntensity: number) => {
     // Only show color for top 20% of intensities
-    return normalizedIntensity > 0.8;
+    return normalizedIntensity > 0.1;
 };
 
 const SampleCategory = ({
