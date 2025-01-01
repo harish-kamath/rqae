@@ -99,7 +99,14 @@ class IntensityEngine:
 
         print(f"Loading model {model_id}")
         model = RQAE.from_pretrained(model_id).eval().cuda()
-        sims = model.codebook_sims.unsqueeze(0).repeat(model.num_quantizers, 1, 1)
+
+        mode = "projected"
+        if mode == "original":
+            sims = model.codebook_sims.unsqueeze(0).repeat(model.num_quantizers, 1, 1)
+        elif mode == "projected":
+            sims = model.subfeature_sims
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
         # num_quantizers, codebook_size, codebook_size
 
         sims *= model.layer_norms.unsqueeze(-1).unsqueeze(-1)
@@ -205,19 +212,42 @@ class IntensityEngine:
         ):
             intensities_across_shards = []
             for shard in self.activations:
-                partial_shard = shard[..., layer_range[0] : layer_range[1]]
-                partial_shard = partial_shard.cuda()
-                # (1024, 127, layer range) int
-                partial_sims = query_sims[layer_range[0] : layer_range[1]]
-                # (layer range, 127, 625) float
+                range_size = layer_range[1] - layer_range[0]
+                if range_size > 64:
+                    # Process in chunks of 64
+                    intensities = None
+                    for chunk_start in range(layer_range[0], layer_range[1], 64):
+                        chunk_end = min(chunk_start + 64, layer_range[1])
+                        partial_shard = shard[..., chunk_start:chunk_end]
+                        partial_shard = partial_shard.cuda()
+                        # (1024, 127, chunk_size) int
+                        partial_sims = query_sims[chunk_start:chunk_end]
+                        # (chunk_size, 127, 625) float
 
-                intensities = get_intensities(
-                    partial_shard, partial_sims.transpose(0, 1)
-                )
-                # (1024, 127, 127, layer range) float
+                        chunk_intensity = get_intensities(
+                            partial_shard, partial_sims.transpose(0, 1)
+                        )
+                        # (1024, 127, 127, chunk_size) float
+                        chunk_intensity = chunk_intensity.sum(dim=-1)
+                        # (1024, 127, 127) float
+                        if intensities is None:
+                            intensities = chunk_intensity
+                        else:
+                            intensities += chunk_intensity
+                else:
+                    partial_shard = shard[..., layer_range[0] : layer_range[1]]
+                    partial_shard = partial_shard.cuda()
+                    # (1024, 127, layer range) int
+                    partial_sims = query_sims[layer_range[0] : layer_range[1]]
+                    # (layer range, 127, 625) float
 
-                intensities = intensities.sum(dim=-1)
-                # (1024, 127, 127) float
+                    intensities = get_intensities(
+                        partial_shard, partial_sims.transpose(0, 1)
+                    )
+                    # (1024, 127, 127, layer range) float
+                    intensities = intensities.sum(dim=-1)
+                    # (1024, 127, 127) float
+
                 intensities_across_shards.append(intensities)
 
             intensities_across_shards = torch.cat(intensities_across_shards, dim=0)
@@ -325,6 +355,17 @@ class Dataset:
         texts = [self.text[i] for i in idx]
         return list(zip(idx, texts))  # Return tuples of (idx, text)
 
+    @modal.method()
+    def search_texts(self, query: str, limit: int = 10):
+        matching_texts = []
+        for idx, text in enumerate(self.text):
+            joined_text = "".join(text)
+            if query.lower() in joined_text.lower():
+                matching_texts.append({"text": text, "id": idx})
+                if len(matching_texts) >= limit:
+                    break
+        return matching_texts
+
 
 @app.local_entrypoint()
 def main():
@@ -405,7 +446,7 @@ def fastapi_app() -> Callable:
     async def get_samples(
         idx: int,
         dataset_name: str = "monology_pile",
-        layers: str = "4,6,8,12,16,24,32,48,64,128",
+        layers: str = "4,6,8,12,16,24,32,48,64,128,256,512,1023",
     ):
         async def generate_samples():
             try:
@@ -419,6 +460,7 @@ def fastapi_app() -> Callable:
                     )
 
                 cache_path = f"/data/cache/{dataset_name}/samples/{idx}.json"
+                volume.reload()
 
                 # Check if cache exists and contains all requested layers
                 cached_results = None
@@ -476,8 +518,13 @@ def fastapi_app() -> Callable:
                     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
                     with open(cache_path, "w") as f:
                         json.dump(results, f)
+                    volume.commit()
 
             except Exception as e:
+                import traceback
+
+                print(f"Failed at generating samples! {e}")
+                traceback.print_exc()
                 raise HTTPException(status_code=500, detail=str(e))
 
         return StreamingResponse(
@@ -512,12 +559,17 @@ def fastapi_app() -> Callable:
                 "success": True,
             }
         except Exception as e:
+            import traceback
+
+            print(f"Failed at getting text by id! {e}")
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.get("/check_cache")
     async def check_cache(idx: int, dataset_name: str = "monology_pile"):
         try:
             cache_path = f"/data/cache/{dataset_name}/samples/{idx}.json"
+            volume.reload()
             if os.path.exists(cache_path):
                 with open(cache_path, "r") as f:
                     cached_data = json.load(f)
@@ -529,6 +581,10 @@ def fastapi_app() -> Callable:
                     }
             return {"exists": False, "layers": []}
         except Exception as e:
+            import traceback
+
+            print(f"Failed at checking cache! {e}")
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.get("/get_token_samples")
@@ -541,6 +597,7 @@ def fastapi_app() -> Callable:
     ):
         try:
             cache_path = f"/data/cache/{dataset_name}/samples/{idx}.json"
+            volume.reload()
             if not os.path.exists(cache_path):
                 raise HTTPException(status_code=404, detail="Cache not found")
 
@@ -578,6 +635,25 @@ def fastapi_app() -> Callable:
 
             return result
         except Exception as e:
+            import traceback
+
+            print(f"Failed at getting token samples! {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @web_app.get("/search_text")
+    async def search_text(
+        query: str, dataset_name: str = "monology_pile", limit: int = 10
+    ):
+        try:
+            dataset = Dataset(dataset=dataset_name)
+            matching_texts = dataset.search_texts.remote(query, limit)
+            return {"results": matching_texts, "success": True}
+        except Exception as e:
+            import traceback
+
+            print(f"Failed at searching text! {e}")
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=str(e))
 
     return web_app

@@ -36,16 +36,16 @@ interface TokenDetails {
 }
 
 // Helper function to normalize intensities for a sequence
-const normalizeIntensities = (intensities: number[]) => {
+const normalizeIntensities = (intensities: number[], maxAcrossAllIntensities: number) => {
     const max = Math.max(...intensities);
-    return intensities.map(i => max > 0 ? Math.max(0, i) / max : 0);
+    return intensities.map(i => max > 0 ? Math.max(0, i) / maxAcrossAllIntensities : 0);
 };
 
 // Helper function to convert intensity to color
 const getIntensityColor = (intensity: number, shouldShow: boolean) => {
     if (!shouldShow) return 'transparent';
     // Use a gold color (rgb(234, 179, 8)) with reduced max opacity
-    return `rgba(234, 179, 8, ${intensity * 0.9})`;
+    return `rgba(234, 179, 8, ${intensity * 0.95})`;
 };
 
 // Helper function to determine if intensity should be shown
@@ -72,7 +72,8 @@ const SampleCategory = ({
                 {samples.map((sample, sampleIdx) => {
                     // Get the sequence's intensities and normalize them
                     const sequenceIntensities = intensities[sampleIdx];
-                    const normalizedIntensities = normalizeIntensities(sequenceIntensities);
+                    const maxAcrossAllIntensities = Math.max(...intensities.flat());
+                    const normalizedIntensities = normalizeIntensities(sequenceIntensities, maxAcrossAllIntensities);
                     const sampleTokens = texts[sampleIdx][1]; // Get the tokens for this sample
 
                     return (
@@ -177,7 +178,7 @@ export default function ExampleDetails() {
             setLoadingSamples(true);
             try {
                 const response = await fetch(
-                    `https://harish-kamath--rqae-server-fastapi-app.modal.run/get_token_samples?idx=${params.id}&token_position=${selectedToken}&layer=${selectedLayer}&dataset_name=monology_pile`
+                    `https://harish-kamath--rqae-server-fastapi-app.modal.run/get_token_samples?idx=${params.id}&token_position=${selectedToken}&layer=${selectedLayer}&dataset_name=monology_pile&limit=100`
                 );
                 const samples = await response.json();
                 setTokenDetails(prev => prev ? {
@@ -324,7 +325,7 @@ export default function ExampleDetails() {
                                                     intensities={tokenDetails.samples.top.intensities}
                                                     texts={tokenDetails.samples.top.texts}
                                                 />
-                                                <SampleCategory
+                                                {/* <SampleCategory
                                                     title="Middle Examples"
                                                     samples={tokenDetails.samples.middle.indices}
                                                     intensities={tokenDetails.samples.middle.intensities}
@@ -335,7 +336,7 @@ export default function ExampleDetails() {
                                                     samples={tokenDetails.samples.bottom.indices}
                                                     intensities={tokenDetails.samples.bottom.intensities}
                                                     texts={tokenDetails.samples.bottom.texts}
-                                                />
+                                                /> */}
                                             </div>
                                         )}
                                     </>
